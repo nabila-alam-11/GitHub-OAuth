@@ -2,13 +2,51 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 require("dotenv").config();
+const { setSecureCookie } = require("./services/index.js");
+const cookieParser = require("cookie-parser");
+const { verifyAccessToken } = require("./middleware/index.js");
 const app = express();
 const PORT = process.env.PORT;
 
-app.use(cors());
+app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
+app.use(cookieParser());
 
 app.get("/", (req, res) => {
   res.send("<h3>Welcome to OAuth API Server</h3>");
+});
+
+app.get("/user/profile/github", verifyAccessToken, async (req, res) => {
+  try {
+    const { access_token } = req.cookies;
+    const githubUserDataResponse = await axios.get(
+      "https://api.github.com/user",
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    );
+    res.json({ user: githubUserDataResponse.data });
+  } catch (error) {
+    res.status(500).json({ error: "Could not fetch user Github profile." });
+  }
+});
+
+app.get("/user/profile/google", verifyAccessToken, async (req, res) => {
+  try {
+    const { access_token } = req.cookies;
+    const googleUserDataResponse = await axios.get(
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    );
+    res.json({ user: googleUserDataResponse.data });
+  } catch (error) {
+    res.status(500).json({ error: "Could not fetch user Google profile." });
+  }
 });
 
 app.get("/auth/github", (req, res) => {
@@ -19,6 +57,9 @@ app.get("/auth/github", (req, res) => {
 
 app.get("/auth/github/callback", async (req, res) => {
   const { code } = req.query;
+  if (!code) {
+    return res.status(400).send("Authorization code not provided.");
+  }
   try {
     const tokenResponse = await axios.post(
       "https://github.com/login/oauth/access_token",
@@ -32,8 +73,8 @@ app.get("/auth/github/callback", async (req, res) => {
       }
     );
     const accessToken = tokenResponse.data.access_token;
-    res.cookie("access_token", accessToken);
-    return res.redirect(`${process.env.FRONTEND_URL}/v1/profile/github`);
+    setSecureCookie(res, accessToken);
+    return res.redirect(`${process.env.FRONTEND_URL}/v2/profile/github`);
   } catch (error) {
     res.status(500).json(error);
   }
@@ -51,6 +92,7 @@ app.get("/auth/google/callback", async (req, res) => {
   if (!code) {
     return res.status(400).send("Authorization code not provided.");
   }
+  console.log(code);
   let accessToken;
 
   try {
@@ -68,8 +110,8 @@ app.get("/auth/google/callback", async (req, res) => {
       }
     );
     accessToken = tokenResponse.data.access_token;
-    res.cookie("access_token", accessToken);
-    return res.redirect(`${process.env.FRONTEND_URL}/v1/profile/google`);
+    setSecureCookie(res, accessToken);
+    return res.redirect(`${process.env.FRONTEND_URL}/v2/profile/google`);
   } catch (error) {
     console.log(error);
   }
